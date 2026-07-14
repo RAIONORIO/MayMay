@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Ambientes virtuais
+.venv/
+venv/
+
+# Configurações locais e segredos
+.env
+.env.*
+!.env.example
+
+# Banco de dados e arquivos locais
+*.db
+*.sqlite
+*.sqlite3
+logs/
+data/
+
+# Node
+node_modules/
+dist/
+build/
+
+# Rust e Tauri
+target/
+
+# Editores
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
