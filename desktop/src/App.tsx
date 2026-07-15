@@ -68,36 +68,152 @@ function currentTime() {
 function App() {
   const [messages, setMessages] = useState<Message[]>(initialMessages)
   const [input, setInput] = useState('')
+  const [isGenerating, setIsGenerating] = useState(false)
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(
+    event: FormEvent<HTMLFormElement>,
+  ) {
     event.preventDefault()
 
     const content = input.trim()
 
-    if (!content) {
+    if (!content || isGenerating) {
       return
     }
 
+    const userMessageId = Date.now()
+    const assistantMessageId = userMessageId + 1
+
     const userMessage: Message = {
-      id: Date.now(),
+      id: userMessageId,
       author: 'user',
       text: content,
       time: currentTime(),
     }
 
-    setMessages((current) => [...current, userMessage])
-    setInput('')
+    const conversation = [...messages, userMessage].map(
+      (message) => ({
+        role:
+          message.author === 'user'
+            ? 'user'
+            : 'assistant',
+        content: message.text,
+      }),
+    )
 
-    window.setTimeout(() => {
-      const assistantMessage: Message = {
-        id: Date.now() + 1,
-        author: 'maymay',
-        text: 'Interface funcionando. A conexão real com o núcleo local será ligada na próxima etapa.',
-        time: currentTime(),
+    const assistantMessage: Message = {
+      id: assistantMessageId,
+      author: 'maymay',
+      text: '',
+      time: currentTime(),
+    }
+
+    setMessages((current) => [
+      ...current,
+      userMessage,
+      assistantMessage,
+    ])
+
+    setInput('')
+    setIsGenerating(true)
+
+    try {
+      const response = await fetch(
+        'http://127.0.0.1:8765/api/chat',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            messages: conversation,
+          }),
+        },
+      )
+
+      if (!response.ok) {
+        const errorBody = await response.text()
+
+        throw new Error(
+          errorBody ||
+            `A API respondeu com o status ${response.status}.`,
+        )
       }
 
-      setMessages((current) => [...current, assistantMessage])
-    }, 350)
+      if (!response.body) {
+        throw new Error(
+          'A API não retornou um fluxo de resposta.',
+        )
+      }
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let fullResponse = ''
+
+      while (true) {
+        const result = await reader.read()
+
+        if (result.done) {
+          break
+        }
+
+        fullResponse += decoder.decode(
+          result.value,
+          {
+            stream: true,
+          },
+        )
+
+        setMessages((current) =>
+          current.map((message) =>
+            message.id === assistantMessageId
+              ? {
+                  ...message,
+                  text: fullResponse,
+                }
+              : message,
+          ),
+        )
+      }
+
+      fullResponse += decoder.decode()
+
+      if (!fullResponse.trim()) {
+        throw new Error(
+          'A MayMay não retornou nenhum conteúdo.',
+        )
+      }
+
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === assistantMessageId
+            ? {
+                ...message,
+                text: fullResponse,
+              }
+            : message,
+        ),
+      )
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : 'Erro desconhecido.'
+
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === assistantMessageId
+            ? {
+                ...message,
+                text:
+                  `Não consegui responder: ${errorMessage}`,
+              }
+            : message,
+        ),
+      )
+    } finally {
+      setIsGenerating(false)
+    }
   }
 
   return (
@@ -254,6 +370,7 @@ function App() {
           <button
             aria-label="Enviar mensagem"
             className="send-button"
+            disabled={isGenerating}
             type="submit"
           >
             <Send size={22} />

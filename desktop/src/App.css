@@ -675,3 +675,10 @@ body,
   padding: 0;
   text-align: left;
 }
+
+.send-button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+  filter: grayscale(0.25);
+  transform: none;
+}
