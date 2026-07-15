@@ -8,11 +8,13 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
+from maymay.agents import ToolAgent, select_tool_for_request
 from maymay.api.models import ChatRequest, HealthResponse
 from maymay.core.config import Settings
 from maymay.core.prompts import build_system_prompt
 from maymay.core.runtime_info import answer_runtime_question
 from maymay.llm.ollama_client import OllamaClient, OllamaError
+from maymay.tools import ToolRegistry, create_default_tool_registry
 
 
 ClientFactory = Callable[[Settings], OllamaClient]
@@ -73,11 +75,17 @@ def prepare_messages(
 def create_app(
     settings: Settings | None = None,
     client_factory: ClientFactory | None = None,
+    tool_registry: ToolRegistry | None = None,
 ) -> FastAPI:
     """Cria e configura a aplicação FastAPI da MayMay."""
 
     resolved_settings = settings or Settings.from_environment()
     resolved_client_factory = client_factory or create_ollama_client
+    resolved_tool_registry = (
+        tool_registry
+        if tool_registry is not None
+        else create_default_tool_registry()
+    )
 
     app = FastAPI(
         title="MayMay API",
@@ -95,6 +103,7 @@ def create_app(
 
     app.state.settings = resolved_settings
     app.state.client_factory = resolved_client_factory
+    app.state.tool_registry = resolved_tool_registry
 
     @app.get("/")
     def root() -> dict[str, str]:
@@ -153,9 +162,17 @@ def create_app(
             "models": installed_models,
         }
 
+    @app.get("/api/tools")
+    def tools() -> dict[str, list[str]]:
+        """Lista as ferramentas atualmente disponíveis."""
+
+        return {
+            "tools": resolved_tool_registry.names(),
+        }
+
     @app.post("/api/chat")
     def chat(request_body: ChatRequest) -> StreamingResponse:
-        """Envia a conversa ao Ollama e devolve a resposta em streaming."""
+        """Processa uma conversa usando fatos, ferramentas ou chat normal."""
 
         messages = prepare_messages(
             request_body,
@@ -177,6 +194,38 @@ def create_app(
         if runtime_answer is not None:
             return StreamingResponse(
                 iter([runtime_answer]),
+                media_type="text/plain; charset=utf-8",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "X-Content-Type-Options": "nosniff",
+                },
+            )
+
+        preferred_tool = select_tool_for_request(
+            last_user_message,
+        )
+
+        if preferred_tool is not None:
+
+            def generate_tool_response() -> Iterator[str]:
+                try:
+                    with resolved_client_factory(
+                        resolved_settings,
+                    ) as client:
+                        agent = ToolAgent(
+                            client=client,
+                            registry=resolved_tool_registry,
+                        )
+
+                        yield agent.run(
+                            messages,
+                            preferred_tool=preferred_tool,
+                        )
+                except OllamaError as error:
+                    yield f"Erro da MayMay: {error}"
+
+            return StreamingResponse(
+                generate_tool_response(),
                 media_type="text/plain; charset=utf-8",
                 headers={
                     "Cache-Control": "no-cache",

@@ -72,21 +72,29 @@ class OllamaClient:
             if isinstance(item, dict) and item.get("name")
         ]
 
-    def chat(
+    def chat_message(
         self,
-        messages: list[dict[str, str]],
-    ) -> str:
-        """Executa uma conversa sem streaming."""
+        messages: list[dict[str, Any]],
+        *,
+        tools: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """Executa uma conversa e retorna a mensagem completa."""
 
-        payload = {
+        payload: dict[str, Any] = {
             "model": self.model,
             "messages": messages,
             "stream": False,
             "think": False,
         }
 
+        if tools:
+            payload["tools"] = tools
+
         try:
-            response = self._client.post("/api/chat", json=payload)
+            response = self._client.post(
+                "/api/chat",
+                json=payload,
+            )
             response.raise_for_status()
             data = response.json()
         except (httpx.HTTPError, ValueError) as error:
@@ -97,11 +105,28 @@ class OllamaClient:
         if error_message := data.get("error"):
             raise OllamaError(str(error_message))
 
-        message = data.get("message", {})
+        message = data.get("message")
+
+        if not isinstance(message, dict):
+            raise OllamaError(
+                "O Ollama retornou uma mensagem inválida."
+            )
+
+        return message
+
+    def chat(
+        self,
+        messages: list[dict[str, str]],
+    ) -> str:
+        """Executa uma conversa sem streaming."""
+
+        message = self.chat_message(messages)
         content = message.get("content", "")
 
         if not isinstance(content, str):
-            raise OllamaError("O Ollama retornou uma resposta inválida.")
+            raise OllamaError(
+                "O Ollama retornou uma resposta inválida."
+            )
 
         return content
 

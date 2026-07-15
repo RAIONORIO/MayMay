@@ -1,4 +1,5 @@
 from collections.abc import Iterator
+from typing import Any
 
 from fastapi.testclient import TestClient
 
@@ -8,6 +9,9 @@ from maymay.core.config import Settings
 
 class FakeOllamaClient:
     """Cliente falso usado para testar a API sem chamar o Ollama."""
+
+    def __init__(self) -> None:
+        self._tool_round = 0
 
     def __enter__(self) -> "FakeOllamaClient":
         return self
@@ -37,6 +41,34 @@ class FakeOllamaClient:
 
         yield "MayMay "
         yield "pronta."
+
+    def chat_message(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        tools: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        assert tools
+
+        if self._tool_round == 0:
+            self._tool_round += 1
+
+            return {
+                "role": "assistant",
+                "content": (
+                    "Não tenho acesso ao horário."
+                ),
+            }
+
+        assert any(
+            message.get("role") == "tool"
+            for message in messages
+        )
+
+        return {
+            "role": "assistant",
+            "content": "Agora são 09:53 no horário local.",
+        }
 
 
 def fake_client_factory(
@@ -100,6 +132,19 @@ def test_models():
     }
 
 
+def test_tools():
+    with create_test_client() as client:
+        response = client.get("/api/tools")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "tools": [
+            "get_current_datetime",
+            "get_system_info",
+        ],
+    }
+
+
 def test_chat_stream():
     with create_test_client() as client:
         response = client.post(
@@ -126,7 +171,9 @@ def test_chat_answers_runtime_model_information():
                 "messages": [
                     {
                         "role": "user",
-                        "content": "Qual modelo local você está usando?",
+                        "content": (
+                            "Qual modelo local você está usando?"
+                        ),
                     },
                 ],
             },
@@ -137,3 +184,22 @@ def test_chat_answers_runtime_model_information():
         "Sou MayMay e utilizo o modelo local qwen3.5:4b, "
         "executado pelo Ollama no seu computador."
     )
+
+
+def test_chat_uses_local_tool():
+    with create_test_client() as client:
+        response = client.post(
+            "/api/chat",
+            json={
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Que horas são agora?",
+                    },
+                ],
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.text.startswith("Agora são ")
+    assert " do dia " in response.text
