@@ -1,15 +1,10 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import {
   Bell,
-  Bot,
   CalendarDays,
-  Circle,
-  Cpu,
   Folder,
-  HardDrive,
   History,
   ListTodo,
-  MemoryStick,
   MessageSquare,
   Mic,
   Paperclip,
@@ -43,21 +38,6 @@ const navigation = [
   { label: 'Terminal', icon: SquareTerminal },
 ]
 
-const initialMessages: Message[] = [
-  {
-    id: 1,
-    author: 'user',
-    text: 'Apresente-se em uma única frase.',
-    time: '13:42',
-  },
-  {
-    id: 2,
-    author: 'maymay',
-    text: 'Olá! Sou MayMay, sua assistente pessoal local dedicada a ajudar com tarefas diárias no seu computador.',
-    time: '13:42',
-  },
-]
-
 function currentTime() {
   return new Intl.DateTimeFormat('pt-BR', {
     hour: '2-digit',
@@ -66,9 +46,34 @@ function currentTime() {
 }
 
 function App() {
-  const [messages, setMessages] = useState<Message[]>(initialMessages)
+  const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isGenerating, setIsGenerating] = useState(false)
+  const messagesRef = useRef<HTMLDivElement>(null)
+  const shouldAutoScroll = useRef(true)
+
+  useEffect(() => {
+    const container = messagesRef.current
+
+    if (container && shouldAutoScroll.current) {
+      container.scrollTop = container.scrollHeight
+    }
+  }, [messages])
+
+  function handleMessagesScroll() {
+    const container = messagesRef.current
+
+    if (!container) {
+      return
+    }
+
+    const distanceFromBottom =
+      container.scrollHeight -
+      container.scrollTop -
+      container.clientHeight
+
+    shouldAutoScroll.current = distanceFromBottom < 80
+  }
 
   async function handleSubmit(
     event: FormEvent<HTMLFormElement>,
@@ -237,11 +242,6 @@ function App() {
           <span className="signal-line reverse" />
         </div>
 
-        <div className="window-controls" aria-hidden="true">
-          <span>—</span>
-          <span>□</span>
-          <span>×</span>
-        </div>
       </header>
 
       <aside className="sidebar panel">
@@ -261,68 +261,6 @@ function App() {
             ))}
           </nav>
         </section>
-
-        <section className="system-section">
-          <p className="section-title">STATUS DO SISTEMA</p>
-
-          <div className="status-list">
-            <div className="status-row">
-              <Bot size={17} />
-              <span>Ollama</span>
-              <strong className="success">Online</strong>
-            </div>
-
-            <div className="status-row">
-              <Sparkles size={17} />
-              <span>Modelo</span>
-              <strong className="success">qwen3.5:4b</strong>
-            </div>
-
-            <div className="status-row">
-              <Cpu size={17} />
-              <span>CPU</span>
-              <strong className="success">12%</strong>
-            </div>
-
-            <div className="metric-bar">
-              <span style={{ width: '28%' }} />
-            </div>
-
-            <div className="status-row">
-              <MemoryStick size={17} />
-              <span>Memória</span>
-              <strong className="success">3.2 / 16 GB</strong>
-            </div>
-
-            <div className="metric-bar">
-              <span style={{ width: '42%' }} />
-            </div>
-
-            <div className="status-row">
-              <HardDrive size={17} />
-              <span>Disco</span>
-              <strong className="success">120 GB livres</strong>
-            </div>
-          </div>
-        </section>
-
-        <section className="terminal-card">
-          <div className="terminal-header">
-            <span>TERMINAL</span>
-            <SquareTerminal size={15} />
-          </div>
-
-          <div className="terminal-content">
-            <p>C:\MayMay&gt; maymay doctor</p>
-            <br />
-            <p>Ollama: funcionando, versão 0.32.0</p>
-            <p>Modelo configurado: qwen3.5:4b</p>
-            <p>Modelo: instalado e disponível</p>
-            <p>Status: tudo certo!</p>
-            <br />
-            <p>C:\MayMay&gt; <span className="cursor">_</span></p>
-          </div>
-        </section>
       </aside>
 
       <main className="chat-panel panel">
@@ -335,33 +273,51 @@ function App() {
           <span className="conversation-id">MAY-001</span>
         </div>
 
-        <div className="messages">
-          {messages.map((message) => (
-            <article
-              className={`message ${message.author}`}
-              key={message.id}
-            >
-              {message.author === 'maymay' && (
-                <div className="message-avatar">
-                  <img
-                    src="/maymay-chat-avatar.png"
-                    alt="Avatar da MayMay"
-                  />
-                </div>
-              )}
+        <div
+          className="messages"
+          onScroll={handleMessagesScroll}
+          ref={messagesRef}
+        >
+          <div className="messages-list">
+            {messages.map((message) => (
+              <article
+                className={`message ${message.author}`}
+                key={message.id}
+              >
+                {message.author === 'maymay' && (
+                  <div className="message-avatar">
+                    <img
+                      src="/maymay-chat-avatar.png"
+                      alt="Avatar da MayMay"
+                    />
+                  </div>
+                )}
 
-              <div className="message-bubble">
-                <p>{message.text}</p>
-                <time>{message.time}</time>
-              </div>
-            </article>
-          ))}
+                <div className="message-bubble">
+                  <p>{message.text}</p>
+                  <time>{message.time}</time>
+                </div>
+              </article>
+            ))}
+          </div>
         </div>
 
         <form className="composer" onSubmit={handleSubmit}>
           <textarea
             aria-label="Mensagem para a MayMay"
             onChange={(event) => setInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (
+                event.key === "Enter" &&
+                !event.shiftKey &&
+                !event.nativeEvent.isComposing &&
+                !isGenerating &&
+                input.trim()
+              ) {
+                event.preventDefault()
+                event.currentTarget.form?.requestSubmit()
+              }
+            }}
             placeholder="Digite sua mensagem..."
             rows={3}
             value={input}
@@ -400,17 +356,10 @@ function App() {
         </div>
       </main>
 
-      <aside className="avatar-panel panel">
-        <div className="avatar-heading">
-          <div>
-            <span className="eyebrow">MAYMAY</span>
-            <strong>
-              <Circle size={8} fill="currentColor" />
-              ONLINE
-            </strong>
-          </div>
-        </div>
-
+      <aside
+        className="avatar-panel panel"
+        aria-label="Avatar da MayMay"
+      >
         <div className="avatar-stage">
           <div className="avatar-grid" />
           <div className="avatar-ring ring-one" />
@@ -422,42 +371,7 @@ function App() {
             alt="MayMay"
           />
         </div>
-
-        <div className="info-grid">
-          <div>
-            <span>VERSÃO</span>
-            <strong>0.1.0</strong>
-          </div>
-
-          <div>
-            <span>PLATAFORMA</span>
-            <strong>Windows</strong>
-          </div>
-
-          <div>
-            <span>AMBIENTE</span>
-            <strong>Local</strong>
-          </div>
-
-          <div>
-            <span>PYTHON</span>
-            <strong>3.12.13</strong>
-          </div>
-        </div>
-
-        <div className="shortcuts">
-          <p className="section-title">ATALHOS GEEK</p>
-
-          <div><code>/ask</code><span>Pergunta rápida</span></div>
-          <div><code>/chat</code><span>Iniciar conversa</span></div>
-          <div><code>/doctor</code><span>Verificar sistema</span></div>
-          <div><code>/help</code><span>Ver ajuda</span></div>
-        </div>
       </aside>
-
-      <footer className="footer">
-        MAYMAY • ASSISTENTE PESSOAL LOCAL
-      </footer>
     </div>
   )
 }
