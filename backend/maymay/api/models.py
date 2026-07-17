@@ -21,7 +21,9 @@ class ChatMessage(BaseModel):
         content = value.strip()
 
         if not content:
-            raise ValueError("A mensagem não pode estar vazia.")
+            raise ValueError(
+                "A mensagem não pode estar vazia."
+            )
 
         return content
 
@@ -30,6 +32,29 @@ class ChatRequest(BaseModel):
     """Requisição de conversa enviada pela interface."""
 
     messages: list[ChatMessage] = Field(min_length=1)
+
+
+class VoiceSynthesisRequest(BaseModel):
+    """Texto enviado para a síntese de voz local."""
+
+    text: str = Field(
+        min_length=1,
+        max_length=4000,
+    )
+
+    @field_validator("text")
+    @classmethod
+    def validate_text(cls, value: str) -> str:
+        """Remove espaços extras e rejeita texto vazio."""
+
+        text = value.strip()
+
+        if not text:
+            raise ValueError(
+                "O texto para síntese não pode estar vazio."
+            )
+
+        return text
 
 
 class HealthResponse(BaseModel):

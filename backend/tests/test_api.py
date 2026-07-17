@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from maymay.api.app import create_app
 from maymay.core.config import Settings
+from maymay.voice import TtsError
 
 
 class FakeOllamaClient:
@@ -71,13 +72,40 @@ class FakeOllamaClient:
         }
 
 
+class FakeVoiceService:
+    """Serviço falso que evita carregar o modelo ONNX nos testes."""
+
+    def __init__(
+        self,
+        *,
+        audio: bytes = b"RIFFfake-wav",
+        error: TtsError | None = None,
+    ) -> None:
+        self.audio = audio
+        self.error = error
+        self.received_texts: list[str] = []
+
+    def synthesize_wav(
+        self,
+        text: str,
+    ) -> bytes:
+        self.received_texts.append(text)
+
+        if self.error is not None:
+            raise self.error
+
+        return self.audio
+
+
 def fake_client_factory(
     _: Settings,
 ) -> FakeOllamaClient:
     return FakeOllamaClient()
 
 
-def create_test_client() -> TestClient:
+def create_test_client(
+    voice_service: FakeVoiceService | None = None,
+) -> TestClient:
     settings = Settings(
         ollama_base_url="http://ollama.test",
         ollama_model="qwen3.5:4b",
@@ -86,9 +114,22 @@ def create_test_client() -> TestClient:
         api_port=8765,
     )
 
+    resolved_voice_service = (
+        voice_service
+        or FakeVoiceService()
+    )
+
+    def fake_voice_service_factory(
+        _: Settings,
+    ) -> FakeVoiceService:
+        return resolved_voice_service
+
     app = create_app(
         settings=settings,
         client_factory=fake_client_factory,
+        voice_service_factory=(
+            fake_voice_service_factory
+        ),
     )
 
     return TestClient(app)
@@ -143,6 +184,71 @@ def test_tools():
             "get_system_info",
         ],
     }
+
+
+def test_voice_synthesis():
+    voice_service = FakeVoiceService(
+        audio=b"RIFFmaymay-test",
+    )
+
+    with create_test_client(
+        voice_service
+    ) as client:
+        response = client.post(
+            "/api/voice/synthesize",
+            json={
+                "text": "  Olá, Rai.  ",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == (
+        "audio/wav"
+    )
+    assert response.headers["cache-control"] == (
+        "no-store"
+    )
+    assert response.content == b"RIFFmaymay-test"
+    assert voice_service.received_texts == [
+        "Olá, Rai.",
+    ]
+
+
+def test_voice_synthesis_error():
+    voice_service = FakeVoiceService(
+        error=TtsError(
+            "Não foi possível gerar o áudio."
+        ),
+    )
+
+    with create_test_client(
+        voice_service
+    ) as client:
+        response = client.post(
+            "/api/voice/synthesize",
+            json={
+                "text": "Olá, MayMay.",
+            },
+        )
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": (
+            "Não foi possível gerar o áudio."
+        ),
+    }
+
+
+def test_voice_synthesis_rejects_empty_text():
+    with create_test_client() as client:
+        response = client.post(
+            "/api/voice/synthesize",
+            json={
+                "text": "   ",
+            },
+        )
+
+    assert response.status_code == 422
 
 
 def test_chat_stream():

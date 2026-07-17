@@ -10,6 +10,8 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "fastapi>=0.115,<1.0",
     "httpx>=0.28,<1.0",
+    "sherpa-onnx>=1.13,<2",
+    "sherpa-onnx-core==1.13.4",
     "uvicorn[standard]>=0.34,<1.0",
 ]
 
